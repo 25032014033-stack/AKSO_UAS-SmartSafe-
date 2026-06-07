@@ -18,4 +18,4 @@ Disini kami memanfaatkan komponen-komponen *hardware* yang mudah ditemukan di pa
      akan ditampilkan tulisan **SYSTEM LOCKED** dengan suara _buzzing_ dan LED berkedap-kedip.
 
 ## Link Video Penjelasan Proyek
-![]([https://youtube.com/link-video-kamu-disini](https://youtu.be/YdHKvGi3T1M))
+https://youtu.be/YdHKvGi3T1M
