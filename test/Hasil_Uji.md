@@ -5,4 +5,4 @@
 ![](Incorrect.png)
 
 **3. Ketika membuka secara paksa berangkas**
-![](System Locked.png)
+![](SystemLocked.png)
