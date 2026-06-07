@@ -6,7 +6,7 @@ Muhammad Hilmi Septama Ali (25032014073) | Handy Naufal Farras (25032014054) | W
 
 Disini kami memanfaatkan komponen-komponen *hardware* yang mudah ditemukan di pasaran, seperti Arduino Uno, buzzer (sebagai alarm), dan micro servo (sebagai penggerak kunci brankas). Untuk merealisasikannya secara digital tanpa harus merakit komponen fisik terlebih dahulu, kami memanfaatkan platform **Tinkercad** sebagai media simulasi dan pemrograman sistemnya.
 
-**## Cara Menggunakan SmartSafe di Tinkercad**
+## Cara Menggunakan SmartSafe di Tinkercad
   1. Silahkan buka file **src** pada main-branch.
   2. Copy-Paste link yang ada pada kolom _code_ tersebut dan buka di laman website baru internet anda.
   3. Ketika anda sudah masuk **Tinkercad**, anda bisa langsung jalankan _SmartSafe_ tersebut dengan
