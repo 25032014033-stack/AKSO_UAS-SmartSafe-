@@ -1,0 +1,197 @@
+#include <LiquidCrystal_I2C.h> // Memuat library untuk mengendalikan LCD menggunakan modul komunikasi I2C
+#include <Keypad.h>            // Memuat library untuk membaca input dari matriks tombol Keypad
+#include <Servo.h>             // Memuat library untuk mengontrol pergerakan motor servo
+#include <Wire.h>              // Memuat library Wire untuk mendukung komunikasi I2C bawaan Arduino
+
+// --- Deklarasi Variabel & Konfigurasi Karakter ---
+char password[5] = "1234";   // Menyimpan password master sistem (4 karakter + \0)
+char input[20];              // Array penampung karakter yang diketik oleh pengguna
+byte index = 0;              // Variabel penunjuk posisi index pengisian array input
+
+// --- Konfigurasi Dimensi & Inisialisasi LCD ---
+const int col = 16;          // Menentukan jumlah kolom LCD (16 kolom)
+const int row = 2;           // Menentukan jumlah baris LCD (2 baris)
+LiquidCrystal_I2C lcd(0x27, col, row); // Mengatur alamat I2C LCD ke 0x27 dengan dimensi 16x2
+
+// --- Konfigurasi Layout Keypad 4x4 ---
+const byte ROWS = 4;         // Menentukan jumlah baris keypad
+const byte COLS = 4;         // Menentukan jumlah kolom keypad
+char hexaKeys[ROWS][COLS] = { // Peta karakter tombol sesuai tata letak fisik keypad
+  {'1','2','3','A'},
+  {'4','5','6','B'},
+  {'7','8','9','C'},
+  {'*','0','#','D'}
+};
+byte rowPins[ROWS] = {9,8,7,6}; // Menghubungkan pin digital Arduino 9, 8, 7, 6 ke baris keypad
+byte colPins[COLS] = {5,4,3,2}; // Menghubungkan pin digital Arduino 5, 4, 3, 2 ke kolom keypad
+Keypad keypad_pw = Keypad(makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS); // Inisialisasi objek keypad
+
+// --- Deklarasi Pin Komponen Aktuator & Indikator ---
+Servo door_lock;             // Membuat objek servo dengan nama door_lock
+
+const int redLED = 11;       // LED Merah dihubungkan ke pin digital 11 (Indikator Salah/Alarm)
+const int greenLED = 12;     // LED Hijau dihubungkan ke pin digital 12 (Indikator Benar)
+const int blueLED = 13;      // LED Biru dihubungkan ke pin digital 13 (Indikator Standby)
+const int buzzerPin = A0;    // Buzzer dihubungkan ke pin analog A0
+
+char character;              // Variabel penampung sementara untuk tombol yang sedang ditekan
+
+// --- Variabel Benchmark Data Pengujian Waktu ---
+unsigned long waktuMulai;    // Menyimpan waktu awal komputasi dalam milidetik
+unsigned long waktuSelesai;  // Menyimpan waktu akhir komputasi dalam milidetik
+
+void setup()
+{
+  Serial.begin(9600);        // Membuka jalur komunikasi serial ke komputer pada baud rate 9600
+  
+  // --- Inisialisasi Layar LCD ---
+  lcd.init(); 
+  lcd.backlight();           // Menyalakan lampu latar (backlight) LCD
+  lcd.setCursor(5,0);        // Menempatkan kursor di kolom 5, baris 0
+  lcd.print("WELCOME");      // Menampilkan teks sambutan
+  lcd.setCursor(4,1);        // Menempatkan kursor di kolom 4, baris 1
+  lcd.print("KA-2025B");     // Menampilkan identitas kelas/kelompok
+  
+  // --- Inisialisasi Posisi Awal Servo ---
+  door_lock.attach(10);      // Mengubungkan pin kontrol data servo ke pin digital 10
+  door_lock.write(90);       // Mengunci pintu dengan memutar servo ke sudut 90 derajat
+  
+  // --- Mengatur Mode Pin Output ---
+  pinMode(buzzerPin, OUTPUT);
+  pinMode(redLED, OUTPUT); 
+  pinMode(greenLED, OUTPUT); 
+  pinMode(blueLED, OUTPUT);
+  
+  // --- Efek Transisi Start-up Alat ---
+  digitalWrite(blueLED, HIGH);   // Menyalakan LED Biru sejak alat aktif
+  tone(buzzerPin, 1500, 300);    // Membunyikan buzzer dengan frekuensi 1500Hz selama 300ms
+  delay(3000);                   // Memberikan jeda waktu startup selama 3 detik
+  lcd.clear();                   // Membersihkan tampilan layar LCD
+}
+
+void loop()
+{
+  // --- Menampilkan Antarmuka Siaga (Standby) ---
+  lcd.setCursor(0,0);
+  lcd.print("INPUT PASSWORD");
+  lcd.setCursor(0,1);
+  lcd.print("PASS: ");
+  digitalWrite(blueLED, HIGH);   // Memastikan LED biru penanda siaga tetap aktif
+  
+  character = keypad_pw.getKey(); // Membaca input tombol dari komponen keypad
+  
+  if(character){
+    // 1. Kondisi Input Karakter Sandi (Tombol 0-9 atau karakter A-D)
+    if((character >= '0' && character <= '9') || (character >= 'A' && character <= 'D')){ 
+        tone(buzzerPin, 1000, 100);  // Memberikan feedback suara bip pendek setiap tombol ditekan
+        input[index] = character;    // Memasukkan karakter tombol ke dalam array penampung
+        index++;                     // Menaikkan posisi index untuk karakter berikutnya
+        
+        // Menampilkan karakter samaran berupa bintang (*) di layar LCD
+        lcd.setCursor(6,1);
+        for (int i = 0; i < index; i++) {
+          lcd.print('*');
+        }
+    }
+    
+    // 2. Kondisi Tombol '#' Sebagai Enter (Memicu proses verifikasi)
+    else if (character == '#'){ 
+      checkPassword();               // Mengalihkan program untuk mengeksekusi fungsi pemeriksaan sandi
+    }
+    
+    // 3. Kondisi Tombol '*' Sebagai Reset Input (Menghapus seluruh ketikan)
+    else if (character == '*'){ 
+      index = 0;                     // Mengembalikan index pengisian ke posisi awal (nol)
+      for(int i=0; i<sizeof(input); i++){
+        input[i] = 0;                // Menghapus seluruh data karakter di dalam array memori
+      }
+      lcd.setCursor(0,1);
+      lcd.print("PASS:              "); // Membersihkan visualisasi bekas bintang (*) pada baris kedua LCD
+    }
+  }
+}
+
+// --- Fungsi Validasi dan Konfigurasi Respon Keamanan ---
+void checkPassword(){
+        
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("CHECKING...");
+  delay(1000); // Simulasi jeda animasi pemrosesan data sistem
+  lcd.clear();
+  // --- Membandingkan String Input Pengguna dengan Password Utama ---
+  if (strcmp(input, password) == 0){ 
+    // JIKA PASSWORD COCOK (BENAR)
+    lcd.setCursor(0,0);
+    lcd.print("CORRECT");
+    
+    door_lock.write(0);           // Menggerakkan servo ke sudut 0 derajat (Membuka Kunci Pintu)
+    digitalWrite(blueLED, LOW);   // Mematikan lampu standby biru
+    digitalWrite(greenLED, HIGH); // Menyalakan LED hijau sebagai indikator akses diterima
+    tone(buzzerPin, 2000, 500);   // Membunyikan nada tinggi keberhasilan selama 500ms
+    
+    delay(3000);                  // Menahan pintu dalam kondisi terbuka selama 3 detik
+    door_lock.write(90);          // Mengembalikan mekanik servo ke sudut 90 derajat (Mengunci Kembali)
+    digitalWrite(greenLED, LOW);  // Mematikan lampu indikator hijau
+    
+  } else {
+    // JIKA PASSWORD TIDAK COCOK (SALAH)
+    lcd.setCursor(0,0);
+    lcd.print("INCORRECT!");
+    digitalWrite(blueLED, LOW);   // Mematikan lampu standby biru
+    digitalWrite(redLED, HIGH);   // Menyalakan LED merah sebagai indikator penolakan akses
+    tone(buzzerPin, 400, 300);    // Membunyikan nada rendah peringatan salah selama 300ms
+    
+    // --- Algoritma Deteksi Sabotase / Spamming Tombol # ---
+    int spamCount = 0;                     // Inisialisasi pencatat jumlah penekanan paksa
+    unsigned long startErrorTime = millis(); // Merekam waktu awal dimulainya penalti kesalahan
+    
+    // Membuka loop pengawasan tombol selama rentang waktu 3 detik
+    while (millis() - startErrorTime < 3000) {
+      char spamChar = keypad_pw.getKey(); // Memantau aktivitas penekanan keypad selama fase error
+      if (spamChar == '#') {
+         spamCount++;                     // Menambahkan hitungan apabila tombol enter ditekan lagi
+         Serial.print("[UJI] Tombol # ditekan berulang! Jumlah Spam = ");
+         Serial.println(spamCount);
+         tone(buzzerPin, 800, 50);        // Bunyi peringatan instan setiap aksi spam
+         
+         // Jika terdeteksi ditekan paksa sebanyak 2 kali atau lebih dalam masa tunggu
+         if (spamCount >= 2) { 
+            unsigned long waktuSpamTerdeteksi = millis() - startErrorTime;
+            
+            triggerTamperAlarm();         // Melompat ke fungsi penguncian total (Alarm Aktiv)
+            break;                        // Memutus paksa loop pemantauan
+         }
+      }
+    }
+    digitalWrite(redLED, LOW);            // Memadamkan kembali LED Merah setelah siklus selesai
+  }
+
+  // --- Rutinitas Pembersihan Otomatis Array Setelah Validasi Selesai ---
+  index = 0;                              // Mengembalikan penunjuk index memori ke nol
+  for(int i=0; i<sizeof(input); i++){
+    input[i] = 0;                         // Membersihkan total sisa karakter agar tidak mengganggu input berikutnya
+  }
+  lcd.clear();                            // Mengosongkan layar LCD untuk kembali ke loop utama
+}
+
+// --- Fungsi Aktivasi Sirine Pengunci Sistem (Anti-Tamper) ---
+void triggerTamperAlarm() {
+  unsigned long awalAlarm = millis();    // Mencatat waktu milidetik saat alarm mulai berbunyi
+  
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("!SYSTEM LOCKED!");          // Mengunci visual informasi LCD demi keamanan
+
+  // Melakukan perulangan 10 kali untuk menciptakan bunyi sirine dual-tone bolak-balik
+  for (int i = 0; i < 10; i++) {
+    digitalWrite(redLED, HIGH);          // LED merah menyala kilat
+    tone(buzzerPin, 2500);               // Nada tinggi (2.5 kHz) selama 250 milidetik
+    delay(250);
+    
+    digitalWrite(redLED, LOW);           // LED merah padam kilat
+    tone(buzzerPin, 1500);               // Nada rendah (1.5 kHz) selama 250 milidetik
+    delay(250);
+  }
+  noTone(buzzerPin);                     // Memutus paksa suara buzzer setelah siklus loop selesai
+}
